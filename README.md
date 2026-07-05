@@ -5,6 +5,10 @@ AI Study Assistant Frontend is a React + Vite web interface for the AI Study Ass
 
 It connects to a FastAPI backend and allows users to create study notes, upload PDF study materials, organize sources into folders, and chat with selected materials using a local AI model through Ollama.
 
+## Preview
+
+![AI Study Assistant Preview](screenshots/app-preview.png)
+
 ## Features
 
 - Create study notes
