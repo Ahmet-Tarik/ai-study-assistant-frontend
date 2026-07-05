@@ -5,21 +5,36 @@ const API_URL = "http://127.0.0.1:8000";
 
 function App() {
   const [notes, setNotes] = useState([]);
-  const [selectedNoteId, setSelectedNoteId] = useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [selectedSource, setSelectedSource] = useState(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [pdfFile, setPdfFile] = useState(null);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState({});
   const [loading, setLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  const selectedNote = useMemo(() => {
-    return notes.find((note) => note.id === selectedNoteId) || null;
-  }, [notes, selectedNoteId]);
+  const selectedItem = useMemo(() => {
+    if (!selectedSource) {
+      return null;
+    }
 
-  const selectedChatMessages = selectedNote
-    ? chatMessages[selectedNote.id] || []
+    if (selectedSource.type === "note") {
+      return notes.find((note) => note.id === selectedSource.id) || null;
+    }
+
+    return documents.find((document) => document.id === selectedSource.id) || null;
+  }, [documents, notes, selectedSource]);
+
+  const selectedChatKey = selectedSource
+    ? `${selectedSource.type}-${selectedSource.id}`
+    : "";
+
+  const selectedChatMessages = selectedChatKey
+    ? chatMessages[selectedChatKey] || []
     : [];
 
   async function fetchNotes() {
@@ -33,12 +48,31 @@ function App() {
       const data = await response.json();
       setNotes(data);
 
-      if (data.length > 0 && selectedNoteId === null) {
-        setSelectedNoteId(data[0].id);
+      if (!selectedSource && data.length > 0) {
+        setSelectedSource({ type: "note", id: data[0].id });
       }
     } catch (error) {
       setMessage("Could not fetch notes.");
     }
+  }
+
+  async function fetchDocuments() {
+    try {
+      const response = await fetch(`${API_URL}/documents`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch documents");
+      }
+
+      const data = await response.json();
+      setDocuments(data);
+    } catch (error) {
+      setMessage("Could not fetch documents.");
+    }
+  }
+
+  async function refreshSources() {
+    await Promise.all([fetchNotes(), fetchDocuments()]);
   }
 
   async function createNote(event) {
@@ -73,7 +107,7 @@ function App() {
       setTitle("");
       setContent("");
       setMessage("Note created successfully.");
-      setSelectedNoteId(newNote.id);
+      setSelectedSource({ type: "note", id: newNote.id });
       fetchNotes();
     } catch (error) {
       setMessage("Could not create note.");
@@ -82,37 +116,80 @@ function App() {
     }
   }
 
-  function addMessageToNote(noteId, newMessage) {
+  async function uploadPdf(event) {
+    event.preventDefault();
+
+    if (!pdfFile) {
+      setMessage("Please choose a PDF file first.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", pdfFile);
+
+    setUploadLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/documents/upload-pdf`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to upload PDF");
+      }
+
+      const newDocument = await response.json();
+
+      setPdfFile(null);
+      setMessage("PDF uploaded successfully.");
+      setSelectedSource({ type: "document", id: newDocument.id });
+      fetchDocuments();
+    } catch (error) {
+      setMessage("Could not upload PDF.");
+    } finally {
+      setUploadLoading(false);
+    }
+  }
+
+  function addMessageToSource(sourceKey, newMessage) {
     setChatMessages((previousMessages) => ({
       ...previousMessages,
-      [noteId]: [...(previousMessages[noteId] || []), newMessage],
+      [sourceKey]: [...(previousMessages[sourceKey] || []), newMessage],
     }));
   }
 
-  async function sendChatMessage(event) {
+  async function sendChatMessage(event, quickPrompt = "") {
     event.preventDefault();
 
-    if (!selectedNote) {
-      setMessage("Please select a note first.");
+    if (!selectedSource || !selectedItem) {
+      setMessage("Please select a note or document first.");
       return;
     }
 
-    if (!chatInput.trim()) {
+    const userMessage = quickPrompt || chatInput.trim();
+
+    if (!userMessage) {
       return;
     }
 
-    const userMessage = chatInput.trim();
     setChatInput("");
     setMessage("");
     setChatLoading(true);
 
-    addMessageToNote(selectedNote.id, {
+    addMessageToSource(selectedChatKey, {
       role: "user",
       text: userMessage,
     });
 
+    const endpoint =
+      selectedSource.type === "note"
+        ? `${API_URL}/notes/${selectedSource.id}/chat`
+        : `${API_URL}/documents/${selectedSource.id}/chat`;
+
     try {
-      const response = await fetch(`${API_URL}/notes/${selectedNote.id}/chat`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -123,17 +200,17 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to chat with note");
+        throw new Error("Failed to chat with selected source");
       }
 
       const data = await response.json();
 
-      addMessageToNote(selectedNote.id, {
+      addMessageToSource(selectedChatKey, {
         role: "assistant",
         text: data.answer,
       });
     } catch (error) {
-      addMessageToNote(selectedNote.id, {
+      addMessageToSource(selectedChatKey, {
         role: "assistant",
         text: "Sorry, I could not answer this message.",
       });
@@ -142,31 +219,27 @@ function App() {
     }
   }
 
-  async function quickAsk(prompt) {
-    if (!selectedNote) {
+  function quickAsk(prompt) {
+    if (!selectedSource || !selectedItem) {
       return;
     }
-
-    setChatInput(prompt);
 
     const fakeEvent = {
       preventDefault: () => {},
     };
 
-    setTimeout(() => {
-      sendChatMessage(fakeEvent);
-    }, 0);
+    sendChatMessage(fakeEvent, prompt);
   }
 
   useEffect(() => {
-    fetchNotes();
+    refreshSources();
   }, []);
 
   return (
     <main className="app chat-app">
       <section className="hero">
         <h1>AI Study Assistant</h1>
-        <p>Select a note and chat with your study material.</p>
+        <p>Select a note or PDF and chat with your study material.</p>
       </section>
 
       <section className="card create-note-card">
@@ -197,63 +270,118 @@ function App() {
       <section className="chat-layout">
         <aside className="notes-sidebar card">
           <div className="section-header">
-            <h2>Notes</h2>
-            <button className="secondary-button" onClick={fetchNotes}>
+            <h2>Sources</h2>
+            <button className="secondary-button" onClick={refreshSources}>
               Refresh
             </button>
           </div>
 
-          {notes.length === 0 ? (
-            <p className="empty-text">No notes yet.</p>
-          ) : (
-            <div className="note-list-compact">
-              {notes.map((note) => (
-                <button
-                  key={note.id}
-                  type="button"
-                  className={
-                    note.id === selectedNoteId
-                      ? "note-list-item active"
-                      : "note-list-item"
-                  }
-                  onClick={() => setSelectedNoteId(note.id)}
-                >
-                  <strong>{note.title}</strong>
-                  <span>ID: {note.id}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <form onSubmit={uploadPdf} className="pdf-upload-form">
+            <label htmlFor="pdf-upload">Upload PDF</label>
+            <input
+              id="pdf-upload"
+              type="file"
+              accept="application/pdf"
+              onChange={(event) => setPdfFile(event.target.files[0] || null)}
+            />
+            <button type="submit" disabled={uploadLoading}>
+              {uploadLoading ? "Uploading..." : "Upload PDF"}
+            </button>
+          </form>
+
+          <div className="source-section">
+            <h3>Notes</h3>
+
+            {notes.length === 0 ? (
+              <p className="empty-text">No notes yet.</p>
+            ) : (
+              <div className="note-list-compact">
+                {notes.map((note) => (
+                  <button
+                    key={`note-${note.id}`}
+                    type="button"
+                    className={
+                      selectedSource?.type === "note" && selectedSource.id === note.id
+                        ? "note-list-item active"
+                        : "note-list-item"
+                    }
+                    onClick={() => setSelectedSource({ type: "note", id: note.id })}
+                  >
+                    <strong>{note.title}</strong>
+                    <span>Note ID: {note.id}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="source-section">
+            <h3>Documents</h3>
+
+            {documents.length === 0 ? (
+              <p className="empty-text">No PDFs yet.</p>
+            ) : (
+              <div className="note-list-compact">
+                {documents.map((document) => (
+                  <button
+                    key={`document-${document.id}`}
+                    type="button"
+                    className={
+                      selectedSource?.type === "document" &&
+                      selectedSource.id === document.id
+                        ? "note-list-item active"
+                        : "note-list-item"
+                    }
+                    onClick={() =>
+                      setSelectedSource({ type: "document", id: document.id })
+                    }
+                  >
+                    <strong>{document.filename}</strong>
+                    <span>PDF ID: {document.id}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </aside>
 
         <section className="chat-panel card">
-          {selectedNote ? (
+          {selectedItem && selectedSource ? (
             <>
               <div className="chat-panel-header">
                 <div>
-                  <h2>{selectedNote.title}</h2>
-                  <p>{selectedNote.content}</p>
+                  <span className="source-type-badge">
+                    {selectedSource.type === "note" ? "Note" : "PDF Document"}
+                  </span>
+                  <h2>
+                    {selectedSource.type === "note"
+                      ? selectedItem.title
+                      : selectedItem.filename}
+                  </h2>
+                  <p>{selectedItem.content}</p>
                 </div>
               </div>
 
               <div className="quick-actions">
                 <button
                   type="button"
-                  onClick={() => quickAsk("Summarize this note in simple language.")}
+                  onClick={() => quickAsk("Bu materyali basit Türkçe ile özetle.")}
                   disabled={chatLoading}
                 >
                   Summarize
                 </button>
                 <button
                   type="button"
-                  onClick={() => quickAsk("Generate 5 quiz questions from this note with answers.")}
+                  onClick={() =>
+                    quickAsk("Bu materyalden cevaplarıyla birlikte 5 quiz sorusu hazırla.")
+                  }
                   disabled={chatLoading}
                 >
                   Generate Quiz
                 </button>
                 <button
                   type="button"
-                  onClick={() => quickAsk("Explain this note like I am a beginner.")}
+                  onClick={() => quickAsk("Bu materyali yeni başlayan biri için basitçe açıkla.")}
                   disabled={chatLoading}
                 >
                   Explain Simply
@@ -263,7 +391,7 @@ function App() {
               <div className="chat-messages">
                 {selectedChatMessages.length === 0 ? (
                   <div className="empty-chat">
-                    Ask a question about this note, or use a quick action.
+                    Ask a question about this material, or use a quick action.
                   </div>
                 ) : (
                   selectedChatMessages.map((chatMessage, index) => (
@@ -292,7 +420,7 @@ function App() {
               <form onSubmit={sendChatMessage} className="chat-input-form">
                 <input
                   type="text"
-                  placeholder="Ask something about this note..."
+                  placeholder="Ask something about this material..."
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
                   disabled={chatLoading}
@@ -304,8 +432,8 @@ function App() {
             </>
           ) : (
             <div className="empty-chat-panel">
-              <h2>No note selected</h2>
-              <p>Create or select a note to start chatting.</p>
+              <h2>No source selected</h2>
+              <p>Create a note, upload a PDF, or select an existing source.</p>
             </div>
           )}
         </section>

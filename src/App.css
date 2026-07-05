@@ -67,7 +67,8 @@ button {
 
 .note-form input,
 .note-form textarea,
-.chat-input-form input {
+.chat-input-form input,
+.pdf-upload-form input {
   width: 100%;
   border: 1px solid #d1d5db;
   border-radius: 12px;
@@ -78,7 +79,8 @@ button {
 
 .note-form input:focus,
 .note-form textarea:focus,
-.chat-input-form input:focus {
+.chat-input-form input:focus,
+.pdf-upload-form input:focus {
   border-color: #2563eb;
   background: white;
 }
@@ -91,7 +93,8 @@ button {
 .note-form button,
 .secondary-button,
 .chat-input-form button,
-.quick-actions button {
+.quick-actions button,
+.pdf-upload-form button {
   border: none;
   border-radius: 12px;
   padding: 12px 16px;
@@ -102,7 +105,8 @@ button {
 
 .note-form button:disabled,
 .chat-input-form button:disabled,
-.quick-actions button:disabled {
+.quick-actions button:disabled,
+.pdf-upload-form button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
@@ -129,6 +133,52 @@ button {
   color: #6b7280;
 }
 
+.pdf-upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  margin: 18px 0;
+  border: 1px dashed #bfdbfe;
+  border-radius: 14px;
+  background: #eff6ff;
+}
+
+.pdf-upload-form label {
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.pdf-upload-form input {
+  font-size: 14px;
+  background: white;
+}
+
+.pdf-upload-form button {
+  padding: 10px 12px;
+}
+
+.source-section {
+  margin-top: 18px;
+}
+
+.source-section h3 {
+  margin: 0 0 10px;
+  color: #111827;
+  font-size: 16px;
+}
+
+.source-type-badge {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .chat-layout {
   display: grid;
   grid-template-columns: 320px 1fr;
@@ -141,6 +191,7 @@ button {
   top: 24px;
   max-height: calc(100vh - 48px);
   overflow: auto;
+  align-self: start;
 }
 
 .note-list-compact {
@@ -175,6 +226,7 @@ button {
   display: block;
   margin-bottom: 6px;
   color: #111827;
+  overflow-wrap: anywhere;
 }
 
 .note-list-item span {
