@@ -4,15 +4,19 @@ import "./App.css";
 const API_URL = "http://127.0.0.1:8000";
 
 function App() {
+  const [folders, setFolders] = useState([]);
   const [notes, setNotes] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [selectedSource, setSelectedSource] = useState(null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [selectedFolderId, setSelectedFolderId] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [pdfFile, setPdfFile] = useState(null);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState({});
   const [loading, setLoading] = useState(false);
+  const [folderLoading, setFolderLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -36,6 +40,33 @@ function App() {
   const selectedChatMessages = selectedChatKey
     ? chatMessages[selectedChatKey] || []
     : [];
+
+  const folderOptions = [
+    { id: "", name: "Uncategorized" },
+    ...folders.map((folder) => ({ id: String(folder.id), name: folder.name })),
+  ];
+
+  function getFolderItems(folderId) {
+    return {
+      notes: notes.filter((note) => (note.folder_id || null) === folderId),
+      documents: documents.filter((document) => (document.folder_id || null) === folderId),
+    };
+  }
+
+  async function fetchFolders() {
+    try {
+      const response = await fetch(`${API_URL}/folders`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch folders");
+      }
+
+      const data = await response.json();
+      setFolders(data);
+    } catch (error) {
+      setMessage("Could not fetch folders.");
+    }
+  }
 
   async function fetchNotes() {
     try {
@@ -72,7 +103,72 @@ function App() {
   }
 
   async function refreshSources() {
-    await Promise.all([fetchNotes(), fetchDocuments()]);
+    await Promise.all([fetchFolders(), fetchNotes(), fetchDocuments()]);
+  }
+
+  async function createFolder(event) {
+    event.preventDefault();
+
+    if (!newFolderName.trim()) {
+      setMessage("Folder name is required.");
+      return;
+    }
+
+    setFolderLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/folders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: newFolderName.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create folder");
+      }
+
+      const newFolder = await response.json();
+
+      setNewFolderName("");
+      setSelectedFolderId(String(newFolder.id));
+      setMessage("Folder created successfully.");
+      fetchFolders();
+    } catch (error) {
+      setMessage("Could not create folder.");
+    } finally {
+      setFolderLoading(false);
+    }
+  }
+
+  async function deleteFolder(folderId) {
+    const shouldDelete = window.confirm(
+      "Delete this folder? Notes and PDFs inside it will move to Uncategorized."
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/folders/${folderId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete folder");
+      }
+
+      setMessage("Folder deleted successfully.");
+      setSelectedFolderId("");
+      refreshSources();
+    } catch (error) {
+      setMessage("Could not delete folder.");
+    }
   }
 
   async function createNote(event) {
@@ -86,6 +182,8 @@ function App() {
     setLoading(true);
     setMessage("");
 
+    const folderId = selectedFolderId ? Number(selectedFolderId) : null;
+
     try {
       const response = await fetch(`${API_URL}/notes`, {
         method: "POST",
@@ -95,6 +193,7 @@ function App() {
         body: JSON.stringify({
           title,
           content,
+          folder_id: folderId,
         }),
       });
 
@@ -124,8 +223,13 @@ function App() {
       return;
     }
 
+    const folderId = selectedFolderId ? Number(selectedFolderId) : null;
     const formData = new FormData();
     formData.append("file", pdfFile);
+
+    if (folderId !== null) {
+      formData.append("folder_id", folderId);
+    }
 
     setUploadLoading(true);
     setMessage("");
@@ -151,6 +255,154 @@ function App() {
     } finally {
       setUploadLoading(false);
     }
+  }
+
+  async function deleteNote(noteId) {
+    const shouldDelete = window.confirm("Delete this note?");
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/notes/${noteId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete note");
+      }
+
+      setNotes((previousNotes) => previousNotes.filter((note) => note.id !== noteId));
+      setChatMessages((previousMessages) => {
+        const updatedMessages = { ...previousMessages };
+        delete updatedMessages[`note-${noteId}`];
+        return updatedMessages;
+      });
+
+      if (selectedSource?.type === "note" && selectedSource.id === noteId) {
+        setSelectedSource(null);
+      }
+
+      setMessage("Note deleted successfully.");
+    } catch (error) {
+      setMessage("Could not delete note.");
+    }
+  }
+
+  async function deleteDocument(documentId) {
+    const shouldDelete = window.confirm("Delete this PDF document?");
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/documents/${documentId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete document");
+      }
+
+      setDocuments((previousDocuments) =>
+        previousDocuments.filter((document) => document.id !== documentId)
+      );
+      setChatMessages((previousMessages) => {
+        const updatedMessages = { ...previousMessages };
+        delete updatedMessages[`document-${documentId}`];
+        return updatedMessages;
+      });
+
+      if (selectedSource?.type === "document" && selectedSource.id === documentId) {
+        setSelectedSource(null);
+      }
+
+      setMessage("PDF deleted successfully.");
+    } catch (error) {
+      setMessage("Could not delete PDF.");
+    }
+  }
+
+  function handleDragStart(event, sourceType, sourceId) {
+    event.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({
+        type: sourceType,
+        id: sourceId,
+      })
+    );
+    event.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  async function moveSourceToFolder(source, targetFolderId) {
+    const folderId = targetFolderId === null ? null : Number(targetFolderId);
+
+    try {
+      if (source.type === "note") {
+        const note = notes.find((currentNote) => currentNote.id === source.id);
+
+        if (!note) {
+          throw new Error("Note not found");
+        }
+
+        const response = await fetch(`${API_URL}/notes/${source.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            title: note.title,
+            content: note.content,
+            folder_id: folderId,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to move note");
+        }
+      }
+
+      if (source.type === "document") {
+        const response = await fetch(`${API_URL}/documents/${source.id}/folder`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            folder_id: folderId,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to move PDF");
+        }
+      }
+
+      setMessage("Source moved successfully.");
+      refreshSources();
+    } catch (error) {
+      setMessage("Could not move source.");
+    }
+  }
+
+  function handleDrop(event, targetFolderId) {
+    event.preventDefault();
+
+    const dragData = event.dataTransfer.getData("application/json");
+
+    if (!dragData) {
+      return;
+    }
+
+    const source = JSON.parse(dragData);
+    moveSourceToFolder(source, targetFolderId);
   }
 
   function addMessageToSource(sourceKey, newMessage) {
@@ -238,12 +490,36 @@ function App() {
   return (
     <main className="app chat-app">
       <section className="hero">
+        <div className="hero-badge">Local AI Study Workspace</div>
         <h1>AI Study Assistant</h1>
-        <p>Select a note or PDF and chat with your study material.</p>
+        <p>Create notes, upload PDFs, organize folders, and chat with your study materials.</p>
+        <div className="hero-stats">
+          <div>
+            <strong>{notes.length}</strong>
+            <span>Saved Notes</span>
+          </div>
+          <div>
+            <strong>{documents.length}</strong>
+            <span>PDF Documents</span>
+          </div>
+          <div>
+            <strong>{folders.length}</strong>
+            <span>Folders</span>
+          </div>
+          <div>
+            <strong>Local</strong>
+            <span>Ollama AI</span>
+          </div>
+        </div>
       </section>
 
       <section className="card create-note-card">
-        <h2>Create Note</h2>
+        <div className="section-title-row">
+          <div>
+            <span className="eyebrow">New material</span>
+            <h2>Create Note</h2>
+          </div>
+        </div>
 
         <form onSubmit={createNote} className="note-form">
           <input
@@ -252,6 +528,17 @@ function App() {
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
+
+          <select
+            value={selectedFolderId}
+            onChange={(event) => setSelectedFolderId(event.target.value)}
+          >
+            {folderOptions.map((folder) => (
+              <option key={`option-${folder.id || "uncategorized"}`} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
 
           <textarea
             placeholder="Write your study note here..."
@@ -270,14 +557,43 @@ function App() {
       <section className="chat-layout">
         <aside className="notes-sidebar card">
           <div className="section-header">
-            <h2>Sources</h2>
+            <div>
+              <span className="eyebrow">Library</span>
+              <h2>Sources</h2>
+            </div>
             <button className="secondary-button" onClick={refreshSources}>
               Refresh
             </button>
           </div>
 
+          <form onSubmit={createFolder} className="folder-form">
+            <label htmlFor="folder-name">Create Folder</label>
+            <div>
+              <input
+                id="folder-name"
+                type="text"
+                placeholder="e.g. Mathematics"
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+              />
+              <button type="submit" disabled={folderLoading}>
+                {folderLoading ? "..." : "+"}
+              </button>
+            </div>
+          </form>
+
           <form onSubmit={uploadPdf} className="pdf-upload-form">
             <label htmlFor="pdf-upload">Upload PDF</label>
+            <select
+              value={selectedFolderId}
+              onChange={(event) => setSelectedFolderId(event.target.value)}
+            >
+              {folderOptions.map((folder) => (
+                <option key={`pdf-option-${folder.id || "uncategorized"}`} value={folder.id}>
+                  {folder.name}
+                </option>
+              ))}
+            </select>
             <input
               id="pdf-upload"
               type="file"
@@ -289,59 +605,115 @@ function App() {
             </button>
           </form>
 
-          <div className="source-section">
-            <h3>Notes</h3>
+          <div className="folders-list">
+            <div className="source-section-title">
+              <h3>Folders</h3>
+              <span>{folders.length + 1}</span>
+            </div>
 
-            {notes.length === 0 ? (
-              <p className="empty-text">No notes yet.</p>
-            ) : (
-              <div className="note-list-compact">
-                {notes.map((note) => (
-                  <button
-                    key={`note-${note.id}`}
-                    type="button"
-                    className={
-                      selectedSource?.type === "note" && selectedSource.id === note.id
-                        ? "note-list-item active"
-                        : "note-list-item"
-                    }
-                    onClick={() => setSelectedSource({ type: "note", id: note.id })}
-                  >
-                    <strong>{note.title}</strong>
-                    <span>Note ID: {note.id}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            {[...folders, { id: null, name: "Uncategorized" }].map((folder) => {
+              const folderId = folder.id || null;
+              const folderItems = getFolderItems(folderId);
+              const totalItems = folderItems.notes.length + folderItems.documents.length;
 
-          <div className="source-section">
-            <h3>Documents</h3>
+              return (
+                <div
+                  key={`folder-${folder.id || "uncategorized"}`}
+                  className="folder-group"
+                  onDragOver={handleDragOver}
+                  onDrop={(event) => handleDrop(event, folderId)}
+                >
+                  <div className="folder-header-row">
+                    <div>
+                      <strong>{folder.name}</strong>
+                      <span>{totalItems} items</span>
+                    </div>
 
-            {documents.length === 0 ? (
-              <p className="empty-text">No PDFs yet.</p>
-            ) : (
-              <div className="note-list-compact">
-                {documents.map((document) => (
-                  <button
-                    key={`document-${document.id}`}
-                    type="button"
-                    className={
-                      selectedSource?.type === "document" &&
-                      selectedSource.id === document.id
-                        ? "note-list-item active"
-                        : "note-list-item"
-                    }
-                    onClick={() =>
-                      setSelectedSource({ type: "document", id: document.id })
-                    }
-                  >
-                    <strong>{document.filename}</strong>
-                    <span>PDF ID: {document.id}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+                    {folder.id && (
+                      <button
+                        type="button"
+                        className="delete-folder-button"
+                        onClick={() => deleteFolder(folder.id)}
+                        aria-label={`Delete ${folder.name}`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  {totalItems === 0 ? (
+                    <p className="empty-folder-text">No sources here.</p>
+                  ) : (
+                    <div className="note-list-compact">
+                      {folderItems.notes.map((note) => (
+                        <div
+                          key={`note-${note.id}`}
+                          draggable
+                          onDragStart={(event) => handleDragStart(event, "note", note.id)}
+                          className={
+                            selectedSource?.type === "note" && selectedSource.id === note.id
+                              ? "source-card active draggable-source"
+                              : "source-card draggable-source"
+                          }
+                        >
+                          <button
+                            type="button"
+                            className="source-main-button"
+                            onClick={() => setSelectedSource({ type: "note", id: note.id })}
+                          >
+                            <strong>{note.title}</strong>
+                            <span>Note ID: {note.id}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            className="delete-source-button"
+                            onClick={() => deleteNote(note.id)}
+                            aria-label={`Delete ${note.title}`}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+
+                      {folderItems.documents.map((document) => (
+                        <div
+                          key={`document-${document.id}`}
+                          draggable
+                          onDragStart={(event) => handleDragStart(event, "document", document.id)}
+                          className={
+                            selectedSource?.type === "document" &&
+                            selectedSource.id === document.id
+                              ? "source-card active draggable-source"
+                              : "source-card draggable-source"
+                          }
+                        >
+                          <button
+                            type="button"
+                            className="source-main-button"
+                            onClick={() =>
+                              setSelectedSource({ type: "document", id: document.id })
+                            }
+                          >
+                            <strong>{document.filename}</strong>
+                            <span>PDF ID: {document.id}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            className="delete-source-button"
+                            onClick={() => deleteDocument(document.id)}
+                            aria-label={`Delete ${document.filename}`}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </aside>
 
@@ -365,7 +737,7 @@ function App() {
               <div className="quick-actions">
                 <button
                   type="button"
-                  onClick={() => quickAsk("Bu materyali basit Türkçe ile özetle.")}
+                  onClick={() => quickAsk("Summarize this material clearly in simple English.")}
                   disabled={chatLoading}
                 >
                   Summarize
@@ -373,7 +745,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() =>
-                    quickAsk("Bu materyalden cevaplarıyla birlikte 5 quiz sorusu hazırla.")
+                    quickAsk("Create 5 quiz questions with answers based on this material.")
                   }
                   disabled={chatLoading}
                 >
@@ -381,7 +753,7 @@ function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => quickAsk("Bu materyali yeni başlayan biri için basitçe açıkla.")}
+                  onClick={() => quickAsk("Explain this material in simple English for a beginner.")}
                   disabled={chatLoading}
                 >
                   Explain Simply
@@ -390,8 +762,25 @@ function App() {
 
               <div className="chat-messages">
                 {selectedChatMessages.length === 0 ? (
-                  <div className="empty-chat">
-                    Ask a question about this material, or use a quick action.
+                  <div className="empty-chat empty-chat-rich">
+                    <span className="empty-chat-icon">✨</span>
+                    <h3>Start studying with this source</h3>
+                    <p>Ask a question, summarize the material, or generate practice questions.</p>
+
+                    <div className="empty-feature-grid">
+                      <div>
+                        <strong>Ask</strong>
+                        <span>Chat with the selected note or PDF.</span>
+                      </div>
+                      <div>
+                        <strong>Summarize</strong>
+                        <span>Get a short and simple overview.</span>
+                      </div>
+                      <div>
+                        <strong>Quiz</strong>
+                        <span>Create quick practice questions.</span>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   selectedChatMessages.map((chatMessage, index) => (
@@ -431,9 +820,10 @@ function App() {
               </form>
             </>
           ) : (
-            <div className="empty-chat-panel">
+            <div className="empty-chat-panel empty-chat-panel-rich">
+              <span className="empty-chat-icon">📚</span>
               <h2>No source selected</h2>
-              <p>Create a note, upload a PDF, or select an existing source.</p>
+              <p>Create a note, upload a PDF, or select an existing source to start chatting.</p>
             </div>
           )}
         </section>
