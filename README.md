@@ -3,19 +3,26 @@
 
 AI Study Assistant Frontend is a React + Vite web interface for the AI Study Assistant project.
 
-It connects to the FastAPI backend and lets users create study notes, upload PDF study materials, select notes or PDFs as sources, and chat with those materials using a local AI model through Ollama.
+It connects to a FastAPI backend and allows users to create study notes, upload PDF study materials, organize sources into folders, and chat with selected materials using a local AI model through Ollama.
 
 ## Features
 
-- Create new study notes
-- List saved notes from the backend
+- Create study notes
 - Upload PDF study materials
-- List saved PDF documents from the backend
+- Organize notes and PDFs into folders
+- Move notes and PDFs between folders using drag and drop
+- Keep uncategorized sources outside folders
+- Delete notes, PDF documents, and folders
 - Select a note or PDF as the active study source
-- Chat with selected notes using their saved content as context
+- Chat with selected notes using saved note content as context
 - Chat with selected PDF documents using extracted PDF text as context
-- Quick action buttons for summarization, quiz generation, and simple explanation
-- Clean chat-style user interface
+- Quick action buttons:
+  - Summarize
+  - Generate Quiz
+  - Explain Simply
+- Clean chat-style interface
+- Responsive layout
+- Polished UI animations and hover effects
 
 ## Tech Stack
 
@@ -27,7 +34,7 @@ It connects to the FastAPI backend and lets users create study notes, upload PDF
 
 ## Backend Repository
 
-This frontend requires the backend server to be running locally.
+This frontend requires the FastAPI backend server to be running locally.
 
 Backend repository:
 
@@ -35,7 +42,7 @@ Backend repository:
 https://github.com/Ahmet-Tarik/ai-study-assistant-backend
 ```
 
-Backend local URL:
+Default backend URL:
 
 ```text
 http://127.0.0.1:8000
@@ -56,7 +63,7 @@ Install dependencies:
 npm install
 ```
 
-Start the frontend development server:
+Start the development server:
 
 ```bash
 npm run dev
@@ -84,28 +91,38 @@ The backend must be running at:
 http://127.0.0.1:8000
 ```
 
+Ollama should also be running locally with the model configured in the backend.
+
 ## Main UI Flow
 
-1. Create or select a saved study note.
-2. Upload or select a saved PDF document.
-3. Choose a source from the left sidebar.
-4. Chat with the selected source in the main chat panel.
-5. Use quick actions such as:
-   - Summarize
-   - Generate Quiz
-   - Explain Simply
+1. Create a folder such as `Mathematics` or `Formal Languages`.
+2. Create a study note or upload a PDF.
+3. Assign the note or PDF to a folder.
+4. Select a source from the sidebar.
+5. Chat with the selected material.
+6. Use quick actions to summarize, generate quiz questions, or explain the material simply.
+7. Drag and drop sources between folders when needed.
 
 ## Connected Backend Endpoints
 
 The frontend currently uses these backend endpoints:
 
 ```text
-GET  /notes
-POST /notes
-GET  /documents
-POST /documents/upload-pdf
-POST /notes/{note_id}/chat
-POST /documents/{document_id}/chat
+GET    /folders
+POST   /folders
+DELETE /folders/{folder_id}
+
+GET    /notes
+POST   /notes
+PUT    /notes/{note_id}
+DELETE /notes/{note_id}
+POST   /notes/{note_id}/chat
+
+GET    /documents
+POST   /documents/upload-pdf
+PUT    /documents/{document_id}/folder
+DELETE /documents/{document_id}
+POST   /documents/{document_id}/chat
 ```
 
 ## Project Status
@@ -113,21 +130,24 @@ POST /documents/{document_id}/chat
 Current version includes:
 
 - Chat-based frontend layout
-- Notes list integration
-- PDF document list integration
+- Folder organization
+- Drag-and-drop source movement
+- Notes integration
 - PDF upload integration
+- PDF document integration
 - Contextual AI chat with notes
 - Contextual AI chat with PDF documents
 - Quick action buttons
+- Delete actions for notes, PDFs, and folders
+- UI polish with animations and hover effects
 
 Planned next steps:
 
-- Improve mobile layout
-- Add delete buttons for notes and documents
-- Add loading animations
 - Save chat history to the backend
 - Add authentication
+- Add user accounts
 - Add deployment configuration
+- Improve mobile experience further
 
 ## Author
 
